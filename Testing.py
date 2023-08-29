@@ -1,30 +1,51 @@
 import os
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
-from flask import Flask, render_template, request, redirect, session, url_for
+from flask import Flask, session, request, redirect
+from flask_session import Session
+
+
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY")  # Set your own secret key
+app.config['SECRET_KEY'] = os.urandom(64)
+app.config['SESSION_TYPE'] = 'filesystem'
+app.config['SESSION_FILE_DIR'] = './.flask_session/'
+Session(app)
 
-# Spotify API credentials
-SPOTIPY_CLIENT_ID = os.environ.get("SPOTIPY_CLIENT_ID")
-SPOTIPY_CLIENT_SECRET = os.environ.get("SPOTIPY_CLIENT_SECRET")
-SPOTIPY_REDIRECT_URI = os.environ.get("SPOTIPY_REDIRECT_URI")
 
-# Initialize Spotipy with OAuth2
-sp_oauth = SpotifyOAuth(
-    SPOTIPY_CLIENT_ID, SPOTIPY_CLIENT_SECRET, SPOTIPY_REDIRECT_URI, scope="playlist-modify-private"
-)
 
-@app.route("/")
+@app.route('/')
 def index():
-    return render_template("index.html")
 
-@app.route("/login")
-def login():
-    auth_url = sp_oauth.get_authorize_url()
-    return redirect(auth_url)
+    cache_handler = spotipy.cache_handler.FlaskSessionCacheHandler(session)
+    auth_manager = spotipy.oauth2.SpotifyOAuth(scope='user-read-currently-playing playlist-modify-private',
+                                               cache_handler=cache_handler,
+                                               show_dialog=True)
 
+    if request.args.get("code"):
+        # Step 2. Being redirected from Spotify auth page
+        auth_manager.get_access_token(request.args.get("code"))
+        return redirect('/')
+
+    if not auth_manager.validate_token(cache_handler.get_cached_token()):
+        # Step 1. Display sign in link when no token
+        auth_url = auth_manager.get_authorize_url()
+        return f'<h2><a href="{auth_url}">Sign in</a></h2>'
+
+    # Step 3. Signed in, display data
+    spotify = spotipy.Spotify(auth_manager=auth_manager)
+    return f'<h2>Hi {spotify.me()["display_name"]}, ' \
+           f'<small><a href="/sign_out">[sign out]<a/></small></h2>' \
+           f'<a href="/playlists">my playlists</a> | ' \
+           f'<a href="/currently_playing">currently playing</a> | ' \
+        f'<a href="/current_user">me</a>' \
+
+
+
+@app.route('/sign_out')
+def sign_out():
+    session.pop("token_info", None)
+    return redirect('/')
 @app.route("/callback")
 def callback():
     token_info = sp_oauth.get_access_token(request.args["code"])
