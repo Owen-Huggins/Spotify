@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request
-from Testing import Testing # Replace with the correct name and location of your script file
+import Testing # Replace with the correct name and location of your script file
 
 app = Flask(__name__)
 
