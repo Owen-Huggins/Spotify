@@ -1,5 +1,7 @@
 from flask import Flask, render_template, request
-import Testing # Replace with the name of your script file
+import sys
+sys.path.append('D:\SpotifyGit\Spotify')  # Add the parent directory of SpotifyApplication to sys.path
+from SpotifyApplication import Testing # Replace with the correct name and location of your script file
 
 app = Flask(__name__)
 
