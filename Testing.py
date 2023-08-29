@@ -1,41 +1,55 @@
-from random import shuffle
+import os
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
+from flask import Flask, render_template, request, redirect, session, url_for
 
-# Set up your Spotify API credentials
-SPOTIPY_CLIENT_ID = '0d16d96047644a34bf896349652bcc93'
-SPOTIPY_CLIENT_SECRET = 'cd17688e6f094311be5c00a85de8987b'
-SPOTIPY_REDIRECT_URI = 'http://localhost:8080'
-SCOPE = 'playlist-modify-public user-top-read'
+app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY")  # Set your own secret key
 
-# Authenticate with Spotify
-sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=SPOTIPY_CLIENT_ID,
-                                               client_secret=SPOTIPY_CLIENT_SECRET,
-                                               redirect_uri=SPOTIPY_REDIRECT_URI,
-                                               scope=SCOPE))
+# Spotify API credentials
+SPOTIPY_CLIENT_ID = os.environ.get("SPOTIPY_CLIENT_ID")
+SPOTIPY_CLIENT_SECRET = os.environ.get("SPOTIPY_CLIENT_SECRET")
+SPOTIPY_REDIRECT_URI = os.environ.get("SPOTIPY_REDIRECT_URI")
 
-def main():
-    # Get user's top 50 tracks
-    top_tracks = sp.current_user_top_tracks(limit=50)
+# Initialize Spotipy with OAuth2
+sp_oauth = SpotifyOAuth(
+    SPOTIPY_CLIENT_ID, SPOTIPY_CLIENT_SECRET, SPOTIPY_REDIRECT_URI, scope="playlist-modify-private"
+)
 
-    # Extract track IDs from top tracks
-    top_track_ids = [track['id'] for track in top_tracks['items']]
+@app.route("/")
+def index():
+    return render_template("index.html")
 
-    # Get recommended tracks
-    recommended_tracks = []
+@app.route("/login")
+def login():
+    auth_url = sp_oauth.get_authorize_url()
+    return redirect(auth_url)
 
-    for track_id in top_track_ids:
-        related_tracks = sp.recommendations(seed_tracks=[track_id], limit=5)
-        recommended_tracks.extend([track['id'] for track in related_tracks['tracks']])
+@app.route("/callback")
+def callback():
+    token_info = sp_oauth.get_access_token(request.args["code"])
+    session["token_info"] = token_info
+    return redirect(url_for("create_playlist"))
 
-    # Create a new playlist for recommended tracks
-    user_id = sp.current_user()['id']
-    recommended_playlist = sp.user_playlist_create(user_id, name='Recommended Tracks', public=True)
+@app.route("/create_playlist")
+def create_playlist():
+    if "token_info" not in session:
+        return redirect(url_for("login"))
 
-    # Add recommended tracks to the playlist
-    batch_size = 100
-    for i in range(0, len(recommended_tracks), batch_size):
-        batch_tracks = recommended_tracks[i:i + batch_size]
-        sp.playlist_add_items(recommended_playlist['id'], batch_tracks)
+    token_info = session["token_info"]
+    sp = spotipy.Spotify(auth=token_info["access_token"])
 
-    print('Playlists have been created!')
+    user_info = sp.me()
+    user_id = user_info["id"]
+
+    playlist_name = "My Awesome Playlist"
+    playlist_description = "Created with my cool app!"
+
+    playlist = sp.user_playlist_create(
+        user_id, playlist_name, public=False, description=playlist_description
+    )
+
+    return f"Playlist created! Name: {playlist_name}, ID: {playlist['id']}"
+
+if __name__ == "__main__":
+    app.run(debug=True)
